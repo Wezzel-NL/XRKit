@@ -1,0 +1,24 @@
+{
+  "name": "com.wezzelnl.xrkit",
+  "version": "1.0.0",
+  "displayName": "WezzelNL XRKit",
+  "description": "Cross platform interaction toolkit for OpenXR in Unity.",
+  "unity": "6000.3",
+  "author": {
+    "name": "WezzelNL"
+  },
+  "keywords": [
+    "xr",
+    "openxr",
+    "vr",
+    "hand tracking",
+    "eye tracking"
+  ],
+  "dependencies": {
+    "com.unity.inputsystem": "6.7.0",
+    "com.unity.xr.hands": "1.10.0-pre.2",
+    "com.unity.xr.core-utils": "6.0.0",
+    "com.unity.burst": "2.0.0",
+    "com.unity.collections": "6.7.0"
+  }
+}
