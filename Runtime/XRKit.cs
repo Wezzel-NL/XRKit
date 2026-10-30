@@ -5,13 +5,19 @@ using UnityEngine.XR.Management;
 
 namespace WezzelNL.XRKit.Runtime
 {
-	public static class XRKit
+	public class XRKit : MonoBehaviour
 	{
 		public static bool XRActive { get; private set; } = false;
 		
 		private static XRRuntime runtime;
 		
-		public static IEnumerator Start()
+		public static XRRuntime GetRuntime()
+		{
+			if(!XRActive) throw new InvalidOperationException("XRKit is not active.");
+			return runtime;
+		}
+		
+		public IEnumerator Start()
 		{
 			if(XRActive) throw new InvalidOperationException("XRKit is already active.");
 			yield return XRGeneralSettings.Instance.Manager.InitializeLoader();
@@ -21,7 +27,7 @@ namespace WezzelNL.XRKit.Runtime
 			XRActive = true;
 		}
 
-		public static void Stop()
+		public void OnDestroy()
 		{
 			if(!XRActive) throw new InvalidOperationException("XRKit is not active.");
 			runtime = null; 
@@ -29,12 +35,6 @@ namespace WezzelNL.XRKit.Runtime
 			XRGeneralSettings.Instance.Manager.StopSubsystems();
 			XRGeneralSettings.Instance.Manager.DeinitializeLoader();
 			XRActive = false;
-		}
-
-		public static XRRuntime GetRuntime()
-		{
-			if(!XRActive) throw new InvalidOperationException("XRKit is not active.");
-			return runtime;
 		}
 	}
 }

@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7904502672516020573}
   - component: {fileID: 7426388234585683811}
+  - component: {fileID: 1492504750912204381}
   m_Layer: 0
   m_Name: XRRig
   m_TagString: Untagged
@@ -44,4 +45,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e9557036558bb774b97899039e0066aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: WezzelNL.XRKit.Runtime::XRRig
-  <XRDevices>k__BackingField: []
+--- !u!114 &1492504750912204381
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5094703153520545765}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 13b7630a678f42f8aad0da432228fe8d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: WezzelNL.XRKit.Runtime::WezzelNL.XRKit.Runtime.XRKit
