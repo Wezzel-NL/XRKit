@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Hands;
 using WezzelNL.XRKit.Runtime.Data;
-using XRHand = WezzelNL.XRKit.Runtime.Data.XRHand;
 
 namespace WezzelNL.XRKit.Runtime.Rig.Devices
 {
@@ -22,12 +21,12 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			if(!hand) throw new ArgumentNullException(nameof(hand));
 			switch (hand.Hand)
 			{
-				case XRHand.LeftHand:
+				case Data.XRHand.LeftHand:
 					if(LeftHand) throw new InvalidOperationException("Hand tracker can only output to one tracked hand (left)");
 					LeftHand = hand;
 					InitialSetTrackingState(SubSystem, LeftHand);
 					break;
-				case XRHand.RightHand:
+				case Data.XRHand.RightHand:
 					if(RightHand) throw new InvalidOperationException("Hand tracker can only output to one tracked hand (right)");
 					RightHand = hand;
 					InitialSetTrackingState(SubSystem, RightHand);
@@ -41,10 +40,10 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			if (!hand) throw new ArgumentNullException(nameof(hand));
 			switch (hand.Hand)
 			{
-				case XRHand.LeftHand:
+				case Data.XRHand.LeftHand:
 					if(LeftHand == hand) LeftHand = null;
 					break;
-				case XRHand.RightHand:
+				case Data.XRHand.RightHand:
 					if(RightHand == hand) RightHand = null;
 					break;
 				default: throw new ArgumentOutOfRangeException();
@@ -116,10 +115,10 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			if(!hand) return;
 			switch (hand.Hand)
 			{
-				case XRHand.LeftHand:
+				case Data.XRHand.LeftHand:
 					hand.ApplyTrackingState(subsystem.leftHand.isTracked ? XRDeviceTrackingState.Position | XRDeviceTrackingState.Rotation : XRDeviceTrackingState.None);
 					break;
-				case XRHand.RightHand:
+				case Data.XRHand.RightHand:
 					hand.ApplyTrackingState(subsystem.rightHand.isTracked ? XRDeviceTrackingState.Position | XRDeviceTrackingState.Rotation : XRDeviceTrackingState.None);
 					break;
 				default: throw new ArgumentOutOfRangeException();

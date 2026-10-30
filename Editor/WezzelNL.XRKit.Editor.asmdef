@@ -2,7 +2,14 @@
     "name": "WezzelNL.XRKit.Editor",
     "rootNamespace": "",
     "references": [
-        "GUID:06fc17a37c3fc704fa4225a3a7640a7a"
+        "GUID:06fc17a37c3fc704fa4225a3a7640a7a",
+        "GUID:e40ba710768534012815d3193fa296cb",
+        "GUID:f9fe0089ec81f4079af78eb2287a6163",
+        "GUID:4847341ff46394e83bb78fbd0652937e",
+        "GUID:ce522b6ed64c8be4c989a1d26d0e3275",
+        "GUID:43e9109b8cf6eec438823b2311391706",
+        "GUID:100783d5f4254420685de0af135ba3eb",
+        "GUID:1854f50791b5f432cb3171d9c8a6d450"
     ],
     "includePlatforms": [
         "Editor"

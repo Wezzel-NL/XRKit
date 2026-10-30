@@ -5,7 +5,9 @@
   "description": "Cross platform interaction toolkit for OpenXR in Unity.",
   "unity": "6000.3",
   "author": {
-    "name": "WezzelNL"
+    "name": "WezzelNL",
+    "url": "https://wezzel.nl",
+    "email": "contact@wezzel.nl"
   },
   "keywords": [
     "xr",
@@ -15,10 +17,13 @@
     "eye tracking"
   ],
   "dependencies": {
-    "com.unity.inputsystem": "1.3.0",
-    "com.unity.xr.hands": "1.10.0-pre.2",
-    "com.unity.xr.core-utils": "2.2.0",
     "com.unity.burst": "1.8.12",
-    "com.unity.collections": "2.2.0"
+    "com.unity.collections": "2.2.0",
+    "com.unity.inputsystem": "1.3.0",
+    "com.unity.xr.hands": "1.10.0",
+    "com.unity.xr.core-utils": "2.2.0",
+    "com.unity.xr.openxr": "1.19.0",
+    "com.unity.xr.management": "6.0.0",
+    "com.unity.xr.spatialentities-openxr": "6.7.1"
   }
 }
