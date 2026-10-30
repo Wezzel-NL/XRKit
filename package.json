@@ -23,7 +23,7 @@
     "com.unity.xr.hands": "1.10.0",
     "com.unity.xr.core-utils": "2.2.0",
     "com.unity.xr.openxr": "1.19.0",
-    "com.unity.xr.management": "6.0.0",
+    "com.unity.xr.management": "4.7.0",
     "com.unity.xr.spatialentities-openxr": "6.7.1"
   }
 }
