@@ -95,19 +95,23 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			foreach (var trackableId in changes.removed) if (anchorsByTrackable.ContainsKey(trackableId)) Debug.LogWarning($"{LogPrefix} Runtime removed anchor {trackableId}. It stays saved and will load again next session.");
 		}
 
-		public XRAnchor CreateAnchor(Vector3 position)
+		public XRAnchor CreateAnchor(Vector3 position) => CreateAnchor(position, Quaternion.identity);
+
+		public XRAnchor CreateAnchor(Vector3 position, Quaternion rotation)
 		{
 			var anchor = CreateAnchorObject("Spatial Anchor");
-			anchor.Initialize(this, position);
+			anchor.Initialize(this, position, rotation);
 			anchors.Add(anchor);
 			records.Add(anchor, new AnchorRecord());
-			Debug.Log($"{LogPrefix} Created anchor {anchor.ID} at {position}.");
+			Debug.Log($"{LogPrefix} Created anchor {anchor.ID} at {position}, rotation {rotation.eulerAngles}.");
 
 			SchedulePersist(anchor);
 			return anchor;
 		}
 
-		public void MoveAnchor(XRAnchor anchor, Vector3 position)
+		public void MoveAnchor(XRAnchor anchor, Vector3 position) => MoveAnchor(anchor, position, anchor ? anchor.Rotation : Quaternion.identity);
+
+		public void MoveAnchor(XRAnchor anchor, Vector3 position, Quaternion rotation)
 		{
 			if (!anchor)
 			{
@@ -121,12 +125,12 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 				return;
 			}
 
-			anchor.transform.position = position;
+			anchor.ApplyTrackedPose(position, rotation);
 			record.Version++;
 			if (record.TrackableId != TrackableId.invalidId) anchorsByTrackable.Remove(record.TrackableId);
 
-			if (record.IsPersisting) Debug.Log($"{LogPrefix} Moved anchor {anchor.ID} to {position}. It will be recreated once the current save finishes.");
-			else Debug.Log($"{LogPrefix} Moved anchor {anchor.ID} to {position}. Recreating stored anchor.");
+			if (record.IsPersisting) Debug.Log($"{LogPrefix} Moved anchor {anchor.ID} to {position}, rotation {rotation.eulerAngles}. It will be recreated once the current save finishes.");
+			else Debug.Log($"{LogPrefix} Moved anchor {anchor.ID} to {position}, rotation {rotation.eulerAngles}. Recreating stored anchor.");
 			SchedulePersist(anchor);
 		}
 
@@ -402,11 +406,12 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 
 			var runtimeAnchor = result.value;
 			var anchor = CreateAnchorObject("Spatial Anchor (Loaded)");
-			anchor.Initialize(this, id, ToWorld(runtimeAnchor.pose.position));
+			var worldPose = ToWorld(runtimeAnchor.pose);
+			anchor.Initialize(this, id, worldPose.position, worldPose.rotation);
 			anchors.Add(anchor);
 			records.Add(anchor, new AnchorRecord { TrackableId = runtimeAnchor.trackableId, SavedGuid = savedGuid, IsSaved = true });
 			anchorsByTrackable[runtimeAnchor.trackableId] = anchor;
-			Debug.Log($"{LogPrefix} Loaded anchor {anchor.ID} (trackable {runtimeAnchor.trackableId}, tracking {runtimeAnchor.trackingState}) at {anchor.Position}.");
+			Debug.Log($"{LogPrefix} Loaded anchor {anchor.ID} (trackable {runtimeAnchor.trackableId}, tracking {runtimeAnchor.trackingState}) at {anchor.Position}, rotation {anchor.Rotation.eulerAngles}.");
 			OnAnchorLoaded?.Invoke(anchor);
 		}
 
@@ -452,7 +457,7 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 				while (true)
 				{
 					var version = record.Version;
-					var pose = new Pose(ToSession(anchor.Position), Quaternion.identity);
+					var pose = ToSession(anchor.Pose);
 					var addResult = await target.TryAddAnchorAsync(pose);
 					if (!addResult.status.IsSuccess())
 					{
@@ -659,7 +664,8 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			if (!anchorsByTrackable.TryGetValue(runtimeAnchor.trackableId, out var anchor)) return;
 			if (!anchor) return;
 
-			anchor.transform.position = ToWorld(runtimeAnchor.pose.position);
+			var worldPose = ToWorld(runtimeAnchor.pose);
+			anchor.ApplyTrackedPose(worldPose.position, worldPose.rotation);
 		}
 
 		private void ReleaseAnchors()
@@ -688,9 +694,19 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			return go.AddComponent<XRAnchor>();
 		}
 
-		private Vector3 ToWorld(Vector3 sessionPosition) => Rig ? Rig.transform.TransformPoint(sessionPosition) : sessionPosition;
+		private Pose ToWorld(Pose sessionPose)
+		{
+			if (!Rig) return sessionPose;
+			var origin = Rig.transform;
+			return new Pose(origin.TransformPoint(sessionPose.position), origin.rotation * sessionPose.rotation);
+		}
 
-		private Vector3 ToSession(Vector3 worldPosition) => Rig ? Rig.transform.InverseTransformPoint(worldPosition) : worldPosition;
+		private Pose ToSession(Pose worldPose)
+		{
+			if (!Rig) return worldPose;
+			var origin = Rig.transform;
+			return new Pose(origin.InverseTransformPoint(worldPose.position), Quaternion.Inverse(origin.rotation) * worldPose.rotation);
+		}
 
 		private class AnchorRecord
 		{
