@@ -4,6 +4,7 @@ using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Android;
 using UnityEngine.XR.ARSubsystems;
+using UnityEngine.XR.OpenXR;
 using UnityEngine.XR.OpenXR.Features.SpatialEntities;
 using WezzelNL.XRKit.Runtime.Data;
 
@@ -13,88 +14,210 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 	{
 		public event Action<XRQRMarker> OnQRMarkerFound;
 		public event Action<XRQRMarker> OnQRMarkerLost;
+		private const string LogPrefix = "[XRMarkerTracker]";
+		private const float StatusLogInterval = 5f;
 		private SpatialMarkerSubsystem subsystem;
+		private bool startedByTracker;
+		private bool requestingPermission;
+		private bool wasRunning;
+		private float nextStatusLogTime;
 		private readonly Dictionary<TrackableId, XRQRMarker> xrKitMarkers = new();
 		private readonly Dictionary<TrackableId, XRMarker> markers = new();
 		private static List<SpatialMarkerSubsystem> SubsystemBuffer { get; } = new();
-
-		private void Start()
-		{
-			var permission = GetPermission();
-			if (Permission.HasUserAuthorizedPermission(permission)) return;
-			var callbacks = new PermissionCallbacks();
-			callbacks.PermissionGranted += _ =>
-			{
-				enabled = false;
-				enabled = true;
-			};
-			callbacks.PermissionDenied += p =>
-			{
-				Debug.LogError($"XRMarkerTracker requires additional on device permissions to be granted!");
-				enabled = false;
-			};
-			Permission.RequestUserPermission(permission, callbacks);
-		}
-
-		private string GetPermission()
-		{
-			if(SystemInfo.deviceModel.Contains("Oculus") || SystemInfo.deviceModel.Contains("Quest")) return "com.oculus.permission.USE_SCENE";
-			return "android.permission.SCENE_UNDERSTANDING_COARSE";
-		}
+		private static List<XRMarkerSubsystem> AnyMarkerSubsystemBuffer { get; } = new();
+		private static string[] RequiredExtensions { get; } = { "XR_EXT_future", "XR_EXT_spatial_entity", "XR_EXT_spatial_marker_tracking" };
 
 		protected override void OnEnable()
 		{
 			base.OnEnable();
-			subsystem = FindRunningSubsystem();
+			LogEnvironment();
+
+			var permission = GetPermission();
+			if (Permission.HasUserAuthorizedPermission(permission))
+			{
+				Debug.Log($"{LogPrefix} Permission '{permission}' already granted.");
+				StartSubsystem();
+				return;
+			}
+
+			RequestPermission(permission);
 		}
 
 		protected override void OnDisable()
 		{
 			base.OnDisable();
 			ClearMarkers();
+
+			if (startedByTracker && subsystem is { running: true })
+			{
+				subsystem.Stop();
+				Debug.Log($"{LogPrefix} Stopped marker subsystem.");
+			}
+			startedByTracker = false;
+			wasRunning = false;
 			subsystem = null;
 		}
 
 		private void Update()
 		{
-			if (subsystem is { running: true }) TrackingState = XRDeviceTrackingState.Position | XRDeviceTrackingState.Rotation;
-			else TrackingState = XRDeviceTrackingState.None;
-			
-			if (!EnsureSubsystem()) return;
+			LogStatus();
+
+			if (subsystem is not { running: true })
+			{
+				if (wasRunning) Debug.LogError($"{LogPrefix} Marker subsystem stopped running unexpectedly.");
+				wasRunning = false;
+				TrackingState = XRDeviceTrackingState.None;
+				return;
+			}
+
+			if (!wasRunning) Debug.Log($"{LogPrefix} Marker subsystem is running. Waiting for markers...");
+			wasRunning = true;
+			TrackingState = XRDeviceTrackingState.Position | XRDeviceTrackingState.Rotation;
 
 			using var changes = subsystem.GetChanges(Allocator.Temp);
-			foreach (var marker in changes.added) OnTrackMarker(marker);
+			foreach (var marker in changes.added)
+			{
+				Debug.Log($"{LogPrefix} Marker added: {marker.trackableId}, tracking {marker.trackingState}, data {marker.dataBuffer.bufferType}, pose {marker.pose.position}");
+				OnTrackMarker(marker);
+			}
 			foreach (var marker in changes.updated) OnTrackMarker(marker);
-			foreach (var trackableId in changes.removed) OnMarkerLost(trackableId);
+			foreach (var trackableId in changes.removed)
+			{
+				Debug.Log($"{LogPrefix} Marker removed: {trackableId}");
+				OnMarkerLost(trackableId);
+			}
 		}
 
-		private bool EnsureSubsystem()
+		private void LogEnvironment()
 		{
-			if (TrackingState != XRDeviceTrackingState.None) return true;
-			if (subsystem != null) ClearMarkers();
+			Debug.Log($"{LogPrefix} Device: '{SystemInfo.deviceModel}', OpenXR runtime: '{OpenXRRuntime.name}' {OpenXRRuntime.version}");
 
-			subsystem = FindRunningSubsystem();
-			return subsystem != null;
+			foreach (var extension in RequiredExtensions)
+			{
+				if (OpenXRRuntime.IsExtensionEnabled(extension)) Debug.Log($"{LogPrefix} Extension '{extension}' is enabled.");
+				else Debug.LogError($"{LogPrefix} Extension '{extension}' is NOT enabled. The runtime doesn't support it or the Spatial Entities feature didn't request it.");
+			}
+
+			var settings = OpenXRSettings.Instance;
+			if (!settings)
+			{
+				Debug.LogError($"{LogPrefix} OpenXRSettings.Instance is null. Is OpenXR enabled as plug-in provider for this platform?");
+				return;
+			}
+
+			var feature = settings.GetFeature<SpatialMarkerFeature>();
+			if (!feature) Debug.LogError($"{LogPrefix} SpatialMarkerFeature not found in OpenXR settings for this platform.");
+			else if (!feature.enabled) Debug.LogError($"{LogPrefix} 'Spatial Entities: Markers' is disabled. Enable it under XR Plug-in Management > OpenXR > Spatial Entities.");
+			else Debug.Log($"{LogPrefix} 'Spatial Entities: Markers' feature is enabled.");
 		}
 
-		private static SpatialMarkerSubsystem FindRunningSubsystem()
+		private void LogStatus()
+		{
+			if (Time.unscaledTime < nextStatusLogTime) return;
+			nextStatusLogTime = Time.unscaledTime + StatusLogInterval;
+
+			if (subsystem == null) Debug.LogWarning($"{LogPrefix} Status: no subsystem. Permission granted: {Permission.HasUserAuthorizedPermission(GetPermission())}, requesting: {requestingPermission}");
+			else Debug.Log($"{LogPrefix} Status: subsystem running {subsystem.running}, started by tracker {startedByTracker}, tracked markers {markers.Count}");
+		}
+
+		private static string GetPermission()
+		{
+			if (SystemInfo.deviceModel.Contains("Oculus") || SystemInfo.deviceModel.Contains("Quest")) return "com.oculus.permission.USE_SCENE";
+			return "android.permission.SCENE_UNDERSTANDING_COARSE";
+		}
+
+		private void RequestPermission(string permission)
+		{
+			if (requestingPermission) return;
+			requestingPermission = true;
+			Debug.Log($"{LogPrefix} Requesting permission '{permission}'...");
+
+			var callbacks = new PermissionCallbacks();
+			callbacks.PermissionGranted += p =>
+			{
+				requestingPermission = false;
+				Debug.Log($"{LogPrefix} Permission '{p}' granted.");
+				if (isActiveAndEnabled) StartSubsystem();
+				else Debug.LogWarning($"{LogPrefix} Permission granted while tracker was disabled. Subsystem will start on next enable.");
+			};
+			callbacks.PermissionDenied += p =>
+			{
+				requestingPermission = false;
+				Debug.LogError($"{LogPrefix} Permission '{p}' denied. Marker tracking is disabled.");
+				enabled = false;
+			};
+			callbacks.PermissionDeniedAndDontAskAgain += p =>
+			{
+				requestingPermission = false;
+				Debug.LogError($"{LogPrefix} Permission '{p}' denied permanently. Grant it in the headset's app settings or reinstall the app.");
+				enabled = false;
+			};
+			Permission.RequestUserPermission(permission, callbacks);
+		}
+
+		private void StartSubsystem()
+		{
+			LogAllMarkerSubsystems();
+
+			subsystem = FindSubsystem();
+			if (subsystem == null)
+			{
+				Debug.LogError($"{LogPrefix} No SpatialMarkerSubsystem found. Is 'Spatial Entities: Markers' enabled for this platform, and is OpenXR initialized?");
+				return;
+			}
+
+			if (subsystem.running)
+			{
+				Debug.Log($"{LogPrefix} SpatialMarkerSubsystem was already running (started by something else).");
+				return;
+			}
+
+			Debug.Log($"{LogPrefix} Starting SpatialMarkerSubsystem...");
+			subsystem.Start();
+			startedByTracker = true;
+
+			if (subsystem.running) Debug.Log($"{LogPrefix} SpatialMarkerSubsystem.Start() succeeded.");
+			else Debug.LogWarning($"{LogPrefix} SpatialMarkerSubsystem.Start() returned but subsystem is not running yet. Watch the status logs.");
+		}
+
+		private static void LogAllMarkerSubsystems()
+		{
+			SubsystemManager.GetSubsystems(AnyMarkerSubsystemBuffer);
+			if (AnyMarkerSubsystemBuffer.Count == 0)
+			{
+				Debug.LogError($"{LogPrefix} No XRMarkerSubsystem of any provider exists. OpenXR may not have initialized.");
+				return;
+			}
+
+			foreach (var system in AnyMarkerSubsystemBuffer) Debug.Log($"{LogPrefix} Found marker subsystem '{system.GetType().FullName}', id '{system.subsystemDescriptor.id}', running {system.running}");
+			if (AnyMarkerSubsystemBuffer.Count > 1) Debug.LogWarning($"{LogPrefix} Multiple marker subsystems exist. AR Foundation supports one provider per feature; disable the other provider's marker feature.");
+		}
+
+		private static SpatialMarkerSubsystem FindSubsystem()
 		{
 			SubsystemManager.GetSubsystems(SubsystemBuffer);
-			foreach (var system in SubsystemBuffer) if (system.running) return system;
-			return null;
+			return SubsystemBuffer.Count > 0 ? SubsystemBuffer[0] : null;
 		}
-		
+
 		public bool TryGetMarker(TrackableId trackableId, out XRQRMarker marker) => xrKitMarkers.TryGetValue(trackableId, out marker);
-		
+
 		public bool TryGetStringData(TrackableId trackableId, out string data)
 		{
 			data = null;
-			if (TrackingState == XRDeviceTrackingState.None) return false;
+			if (subsystem is not { running: true }) return false;
 			if (!markers.TryGetValue(trackableId, out var marker)) return false;
-			if (marker.dataBuffer.bufferType is not XRSpatialBufferType.String) return false;
+			if (marker.dataBuffer.bufferType is not XRSpatialBufferType.String)
+			{
+				Debug.LogWarning($"{LogPrefix} Marker {trackableId} has data type {marker.dataBuffer.bufferType}, not String.");
+				return false;
+			}
 
 			var result = subsystem.TryGetStringData(trackableId, marker.dataBuffer);
-			if (!result.status.IsSuccess()) return false;
+			if (!result.status.IsSuccess())
+			{
+				Debug.LogError($"{LogPrefix} TryGetStringData failed for {trackableId}: {result.status}");
+				return false;
+			}
 
 			data = result.value;
 			return true;
@@ -103,12 +226,20 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 		public bool TryGetBytesData(TrackableId trackableId, out byte[] data)
 		{
 			data = null;
-			if (TrackingState == XRDeviceTrackingState.None) return false;
+			if (subsystem is not { running: true }) return false;
 			if (!markers.TryGetValue(trackableId, out var marker)) return false;
-			if (marker.dataBuffer.bufferType is not XRSpatialBufferType.Uint8) return false;
+			if (marker.dataBuffer.bufferType is not XRSpatialBufferType.Uint8)
+			{
+				Debug.LogWarning($"{LogPrefix} Marker {trackableId} has data type {marker.dataBuffer.bufferType}, not Uint8.");
+				return false;
+			}
 
 			var result = subsystem.TryGetBytesData(trackableId, marker.dataBuffer);
-			if (!result.status.IsSuccess()) return false;
+			if (!result.status.IsSuccess())
+			{
+				Debug.LogError($"{LogPrefix} TryGetBytesData failed for {trackableId}: {result.status}");
+				return false;
+			}
 
 			data = result.value;
 			return true;
@@ -131,21 +262,25 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			foreach (var marker in markers.Values) DestroyMarker(marker);
 			markers.Clear();
 		}
-		
+
 		private void CreateOrUpdateMarker(XRMarker marker)
 		{
 			var id = marker.trackableId;
-			if(xrKitMarkers.TryGetValue(id, out var xrKitMarker)) xrKitMarker.UpdateMarker(marker.pose, marker.trackingState);
-			else
+			if (xrKitMarkers.TryGetValue(id, out var xrKitMarker))
 			{
-				var go = new GameObject("Tracked Marker");
-				var mark = go.AddComponent<XRQRMarker>();
-				go.transform.SetParent(Rig.transform);
-				mark.Initialize(marker.trackableId, this);
-				mark.UpdateMarker(marker.pose, marker.trackingState);
-				xrKitMarkers.Add(id, mark);
-				OnQRMarkerFound?.Invoke(mark);
+				xrKitMarker.UpdateMarker(marker.pose, marker.trackingState);
+				return;
 			}
+
+			if (!Rig) Debug.LogError($"{LogPrefix} Rig is null. Marker {id} will be created at the scene root.");
+
+			var go = new GameObject("Tracked Marker");
+			var mark = go.AddComponent<XRQRMarker>();
+			if (Rig) go.transform.SetParent(Rig.transform);
+			mark.Initialize(id, this);
+			mark.UpdateMarker(marker.pose, marker.trackingState);
+			xrKitMarkers.Add(id, mark);
+			OnQRMarkerFound?.Invoke(mark);
 		}
 
 		private void DestroyMarker(XRMarker marker)
