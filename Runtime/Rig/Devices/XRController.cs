@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using UnityEngine.InputSystem;
 using WezzelNL.XRKit.Runtime.Data;
 
@@ -75,6 +76,17 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 				return;
 			}
 
+			if (ctx.valueType == typeof(float))
+			{
+				var confidence = ctx.ReadValue<float>();
+				TrackingState = confidence switch
+				{
+					< 0.5f => XRDeviceTrackingState.None,
+					>= 0.5f => XRDeviceTrackingState.Position | XRDeviceTrackingState.Rotation,
+					_ => throw new ArgumentOutOfRangeException(nameof(confidence), confidence, null)
+				};
+				return;
+			}
 			TrackingState = (XRDeviceTrackingState)ctx.ReadValue<int>();
 		}
 	}

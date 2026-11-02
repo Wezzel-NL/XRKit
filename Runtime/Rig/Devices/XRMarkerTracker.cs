@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Android;
@@ -18,7 +19,9 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 		private const float StatusLogInterval = 5f;
 		private SpatialMarkerSubsystem subsystem;
 		private bool startedByTracker;
+		private bool starting;
 		private bool requestingPermission;
+		private CancellationTokenSource startCancellation;
 		private bool wasRunning;
 		private float nextStatusLogTime;
 		private readonly Dictionary<TrackableId, XRQRMarker> xrKitMarkers = new();
@@ -47,6 +50,10 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 		{
 			base.OnDisable();
 			ClearMarkers();
+
+			startCancellation?.Cancel();
+			startCancellation?.Dispose();
+			startCancellation = null;
 
 			if (startedByTracker && subsystem is { running: true })
 			{
@@ -117,7 +124,7 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			nextStatusLogTime = Time.unscaledTime + StatusLogInterval;
 
 			if (subsystem == null) Debug.LogWarning($"{LogPrefix} Status: no subsystem. Permission granted: {Permission.HasUserAuthorizedPermission(GetPermission())}, requesting: {requestingPermission}");
-			else Debug.Log($"{LogPrefix} Status: subsystem running {subsystem.running}, started by tracker {startedByTracker}, tracked markers {markers.Count}");
+			else Debug.Log($"{LogPrefix} Status: subsystem running {subsystem.running}, starting {starting}, started by tracker {startedByTracker}, tracked markers {markers.Count}");
 		}
 
 		private static string GetPermission()
@@ -155,8 +162,10 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			Permission.RequestUserPermission(permission, callbacks);
 		}
 
-		private void StartSubsystem()
+		private async void StartSubsystem()
 		{
+			await Awaitable.MainThreadAsync();
+			if (starting) return;
 			LogAllMarkerSubsystems();
 
 			subsystem = FindSubsystem();
@@ -172,12 +181,47 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 				return;
 			}
 
-			Debug.Log($"{LogPrefix} Starting SpatialMarkerSubsystem...");
-			subsystem.Start();
-			startedByTracker = true;
+			Debug.Log($"{LogPrefix} Subsystem permission state before start: {subsystem.GetPermissionState()}");
+			Debug.Log($"{LogPrefix} Starting SpatialMarkerSubsystem with TryStartAsync...");
 
-			if (subsystem.running) Debug.Log($"{LogPrefix} SpatialMarkerSubsystem.Start() succeeded.");
-			else Debug.LogWarning($"{LogPrefix} SpatialMarkerSubsystem.Start() returned but subsystem is not running yet. Watch the status logs.");
+			starting = true;
+			startCancellation?.Dispose();
+			startCancellation = new CancellationTokenSource();
+			var target = subsystem;
+
+			try
+			{
+				var status = await target.TryStartAsync(startCancellation.Token);
+				if (!status.IsSuccess())
+				{
+					Debug.LogError($"{LogPrefix} TryStartAsync failed: {status} (statusCode {status.statusCode}, nativeStatusCode {status.nativeStatusCode}). Permission state: {target.GetPermissionState()}");
+					return;
+				}
+
+				if (subsystem != target)
+				{
+					Debug.LogWarning($"{LogPrefix} Tracker was disabled while starting. Stopping the subsystem again.");
+					if (target.running) target.Stop();
+					return;
+				}
+
+				startedByTracker = true;
+				if (target.running) Debug.Log($"{LogPrefix} TryStartAsync succeeded. Subsystem is running.");
+				else Debug.LogWarning($"{LogPrefix} TryStartAsync reported success but the subsystem is not running. Watch the status logs.");
+			}
+			catch (OperationCanceledException)
+			{
+				Debug.LogWarning($"{LogPrefix} TryStartAsync was canceled because the tracker was disabled.");
+			}
+			catch (Exception exception)
+			{
+				Debug.LogError($"{LogPrefix} TryStartAsync threw {exception.GetType().Name}: {exception.Message}");
+				Debug.LogException(exception);
+			}
+			finally
+			{
+				starting = false;
+			}
 		}
 
 		private static void LogAllMarkerSubsystems()
