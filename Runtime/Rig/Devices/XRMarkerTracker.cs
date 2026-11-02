@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
+using UnityEngine.Android;
 using UnityEngine.XR.ARSubsystems;
 using UnityEngine.XR.OpenXR.Features.SpatialEntities;
 using WezzelNL.XRKit.Runtime.Data;
@@ -16,6 +17,30 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 		private readonly Dictionary<TrackableId, XRQRMarker> xrKitMarkers = new();
 		private readonly Dictionary<TrackableId, XRMarker> markers = new();
 		private static List<SpatialMarkerSubsystem> SubsystemBuffer { get; } = new();
+
+		private void Start()
+		{
+			var permission = GetPermission();
+			if (Permission.HasUserAuthorizedPermission(permission)) return;
+			var callbacks = new PermissionCallbacks();
+			callbacks.PermissionGranted += _ =>
+			{
+				enabled = false;
+				enabled = true;
+			};
+			callbacks.PermissionDenied += p =>
+			{
+				Debug.LogError($"XRMarkerTracker requires additional on device permissions to be granted!");
+				enabled = false;
+			};
+			Permission.RequestUserPermission(permission, callbacks);
+		}
+
+		private string GetPermission()
+		{
+			if(SystemInfo.deviceModel.Contains("Oculus") || SystemInfo.deviceModel.Contains("Quest")) return "com.oculus.permission.USE_SCENE";
+			return "android.permission.SCENE_UNDERSTANDING_COARSE";
+		}
 
 		protected override void OnEnable()
 		{
