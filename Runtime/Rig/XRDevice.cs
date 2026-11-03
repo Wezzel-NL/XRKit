@@ -4,6 +4,7 @@ using WezzelNL.XRKit.Runtime.Data;
 
 namespace WezzelNL.XRKit.Runtime.Rig
 {
+	[DefaultExecutionOrder(-50)]
 	public abstract class XRDevice : MonoBehaviour
 	{
 		public XRRig Rig { get; private set; }
