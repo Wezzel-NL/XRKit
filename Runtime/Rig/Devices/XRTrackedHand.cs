@@ -2,6 +2,7 @@ using System;
 using Unity.Burst;
 using Unity.Collections;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.XR.Hands;
 using WezzelNL.XRKit.Runtime.Data;
 using XRHand = WezzelNL.XRKit.Runtime.Data.XRHand;
@@ -14,7 +15,7 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 	{
 		[field: SerializeField] public XRHand Hand { get; private set; }
 		[field: SerializeField] public Transform RootBone { get; private set; }
-		[SerializeField, HideInInspector] private Transform[] jointBones = new Transform[XRHandJointID.EndMarker.ToIndex()];
+		[field: SerializeField, HideInInspector, FormerlySerializedAs("jointBones")] public Transform[] JointBones { get; private set; } = new Transform[XRHandJointID.EndMarker.ToIndex()];
 
 		public XRHandTracker Tracker { get; private set; }
 		public Pose RootPose { get; private set; } = Pose.identity;
@@ -62,7 +63,7 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			{
 				if (!hasJointBone[i]) continue;
 				var pose = jointLocalPoses[i];
-				jointBones[i].SetLocalPositionAndRotation(pose.position, pose.rotation);
+				JointBones[i].SetLocalPositionAndRotation(pose.position, pose.rotation);
 			}
 		}
 
@@ -77,7 +78,7 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 			var handScale = transform.lossyScale.x;
 			for (var i = 0; i < jointCount; i++)
 			{
-				var bone = i < jointBones.Length ? jointBones[i] : null;
+				var bone = i < JointBones.Length ? JointBones[i] : null;
 				hasJointBone[i] = bone;
 				boneParentScales[i] = bone ? bone.parent.lossyScale.x / handScale : 1f;
 			}
@@ -130,7 +131,7 @@ namespace WezzelNL.XRKit.Runtime.Rig.Devices
 #if UNITY_EDITOR
 		private void OnValidate()
 		{
-			jointBones = FindJointBones(RootBone);
+			JointBones = FindJointBones(RootBone);
 		}
 
 		private static Transform[] FindJointBones(Transform rootBone)
